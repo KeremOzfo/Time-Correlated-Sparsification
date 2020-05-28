@@ -51,6 +51,7 @@ def train(args, device):
     accuracys = []
     ps_model_mask = torch.ones(modelsize).to(device)
     sf.initialize_zero(net_ps)
+    currentLR = args.lr
     for cl in range(num_client):
         errors.append(torch.zeros(modelsize).to(device))
     runs = math.ceil(N_s/(args.bs*num_client))
@@ -58,10 +59,10 @@ def train(args, device):
     acc = evaluate_accuracy(net_ps, testloader, device)
     accuracys.append(acc * 100)
     for epoch in tqdm(range(args.num_epoch)):
-        for cl in range(num_client):
-            sf.adjust_learning_rate(optimizers[cl], epoch, args.lr)
-        currentLR = sf.get_LR(epoch, args.lr)
-
+        if epoch in args.lr_change:
+            for cl in range(num_client):
+                sf.adjust_learning_rate(optimizers[cl], epoch, args.lr_change, args.lr)
+            currentLR = sf.get_LR(epoch, args.lr, args.lr_change)
 
         for run in range(runs):
 
@@ -92,6 +93,12 @@ def train(args, device):
                 else:
                     sf.sparse_timeC(difmodel, args.sparsity_window, 10, ps_model_mask, device)
 
+                if args.quantization:
+                    if args.avg_all and run>args.all_avg_iter and run%args.all_avg_iter==0:
+                        sf.groups(difmodel,args.num_groups,args.denominator,True,device)
+                    else:
+                        sf.groups(difmodel,args.num_groups,args.denominator,False,device)
+
                 errors[cl] = (difmodel_clone.sub(difmodel)) / currentLR
                 ps_model_dif.add_(difmodel/num_client)
             ps_model_flat.add_(ps_model_dif)
@@ -110,5 +117,5 @@ def train(args, device):
 
         acc = evaluate_accuracy(net_ps, testloader, device)
         accuracys.append(acc * 100)
-        print('accuracy: ',acc*100,)
+        print('accuracy:',acc*100,)
     return accuracys

@@ -1,6 +1,7 @@
 import torch
 import math
 import time
+import numpy as np
 
 def pull_model(model_user, model_server):
 
@@ -137,22 +138,24 @@ def make_sparse_grad(grad_flat, sparsity_window,device):
 
     return None
 
-def adjust_learning_rate(optimizer, epoch, lr):
+def adjust_learning_rate(optimizer, epoch,lr_change, lr):
     """Sets the learning rate to the initial LR decayed by 10 every 50 epochs"""
-    if epoch > 100:
-        lr = round(lr * (0.1 ** (epoch // 75)),3)
-    else:
-        lr = round(lr * (0.1 ** (epoch // 100)), 3)
+
+    lr_change = np.asarray(lr_change)
+    loc = np.where(lr_change == epoch)[0][0] +1
+    lr *= (0.1**loc)
+    lr = round(lr,3)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def get_LR(epoch, lr):
-    """Sets the learning rate to the initial LR decayed by 10 every 50 epochs"""
-    if epoch > 100:
-        lr = round(lr * (0.1 ** (epoch // 75)),3)
-    else:
-        lr = round(lr * (0.1 ** (epoch // 100)), 3)
+def get_LR(epoch, lr,lr_change):
+    if epoch in lr_change:
+        lr_change = np.asarray(lr_change)
+        loc = np.where(lr_change == epoch)[0][0] + 1
+        lr *= (0.1 ** loc)
     return lr
+
+
 
 
 
@@ -171,7 +174,7 @@ def sparse_timeC(grad_flat,sparsity_window,exclusive_sparsity_windows,prev_ps_ma
 
 def sparse_timeC_alt(grad_flat,sparsity_window,exclusive_sparsity_windows,prev_ps_mask,ind_pairs,device):
     exclusive_sparse= math.ceil(len(grad_flat)/(sparsity_window*exclusive_sparsity_windows))
-    layer_spar=10000
+    layer_spar=1000
     sparsed_worker_model = (grad_flat * prev_ps_mask).to(device)
     exclusive_grads = grad_flat.sub(sparsed_worker_model).to(device)
     inds = torch.empty(0,dtype=torch.float).to(device)
@@ -185,11 +188,12 @@ def sparse_timeC_alt(grad_flat,sparsity_window,exclusive_sparsity_windows,prev_p
         l_ind.add_(startPoint)
         inds = torch.cat((inds.float(), l_ind.float()), 0)
     inds = inds.long()
-    clone_worker_grad = torch.clone(exclusive_grads)
-    clone_worker_grad[inds] = 0
-    topk = exclusive_sparse - inds.numel()
-    vals_,inds_ = torch.topk(clone_worker_grad.abs(),k=topk,dim=0)
-    inds = torch.cat((inds, inds_), 0)
+    if exclusive_sparse > inds.numel():
+        clone_worker_grad = torch.clone(exclusive_grads)
+        clone_worker_grad[inds] = 0
+        topk = exclusive_sparse - inds.numel()
+        vals_,inds_ = torch.topk(clone_worker_grad.abs(),k=topk,dim=0)
+        inds = torch.cat((inds, inds_), 0)
     worker_mask[inds] = 1
     worker_mask+=prev_ps_mask
     grad_flat *= worker_mask
@@ -214,3 +218,40 @@ def sparse_special_mask(flat_grad,sparsity_window,layer_spar,ind_pairs,device):
     clone_grad *=0
     clone_grad[inds] = 1
     return clone_grad
+
+def groups(grad_flat, group_len,denominator,all_signal,device):
+    sparseCount = sum(grad_flat!=0)
+    sparseCount= sparseCount.__int__()
+    vals, ind = torch.topk(grad_flat.abs(),k=sparseCount, dim=0)
+    group_boundries = torch.zeros(group_len + 1).to(device)
+    group_boundries[0] = vals[0].float()
+    sign_mask = torch.sign(grad_flat[ind])
+    timez =[]
+    for i in range(1,group_len):
+        group_boundries[i] = group_boundries[i-1] /denominator
+    startPoint =0
+    newVals = torch.zeros_like(vals)
+    startPointz =[]
+    for i in range(group_len):
+        if vals[startPoint] > group_boundries[i+1]:
+            ts1 = time.time()
+            startPointz.append(startPoint)
+            for index,val in enumerate(vals[startPoint:vals.numel()]):
+                if val <= group_boundries[i+1] and group_boundries[i+1] !=0:
+                    newVals[startPoint:startPoint+index] = torch.mean(vals[startPoint:startPoint+index])
+                    startPoint += index
+                    timez.append(time.time() - ts1)
+                    break
+                elif group_boundries[i+1]==0:
+                    newVals[startPoint:vals.numel()] = torch.mean(vals[startPoint:vals.numel()])
+                    timez.append(time.time() - ts1)
+                    break
+    newVals *= sign_mask
+    if all_signal: ## apply averaging for all datas in grad.data
+        sums = torch.sum(grad_flat) - torch.sum(grad_flat[ind])
+        avg = sums / (grad_flat.numel() - sparseCount)
+        grad_flat *= 0
+        grad_flat+=avg
+    else:
+        grad_flat *= 0
+    grad_flat[ind] = newVals
