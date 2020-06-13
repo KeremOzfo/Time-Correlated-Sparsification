@@ -172,9 +172,8 @@ def sparse_timeC(grad_flat,sparsity_window,exclusive_sparsity_windows,prev_ps_ma
     grad_flat *= mask
     return None
 
-def sparse_timeC_alt(grad_flat,sparsity_window,exclusive_sparsity_windows,prev_ps_mask,ind_pairs,device):
+def sparse_timeC_alt(grad_flat,sparsity_window,exclusive_sparsity_windows,layer_spar,prev_ps_mask,ind_pairs,device):
     exclusive_sparse= math.ceil(len(grad_flat)/(sparsity_window*exclusive_sparsity_windows))
-    layer_spar=1000
     sparsed_worker_model = (grad_flat * prev_ps_mask).to(device)
     exclusive_grads = grad_flat.sub(sparsed_worker_model).to(device)
     inds = torch.empty(0,dtype=torch.float).to(device)
@@ -188,14 +187,16 @@ def sparse_timeC_alt(grad_flat,sparsity_window,exclusive_sparsity_windows,prev_p
         l_ind.add_(startPoint)
         inds = torch.cat((inds.float(), l_ind.float()), 0)
     inds = inds.long()
-    if exclusive_sparse > inds.numel():
+    ###
+    if exclusive_sparse > inds.numel(): ##  never-used  at 1000-- more of a failsafe
         clone_worker_grad = torch.clone(exclusive_grads)
         clone_worker_grad[inds] = 0
         topk = exclusive_sparse - inds.numel()
         vals_,inds_ = torch.topk(clone_worker_grad.abs(),k=topk,dim=0)
         inds = torch.cat((inds, inds_), 0)
+    ###
     worker_mask[inds] = 1
-    worker_mask+=prev_ps_mask
+    worker_mask += prev_ps_mask
     grad_flat *= worker_mask
     return None
 
@@ -219,14 +220,13 @@ def sparse_special_mask(flat_grad,sparsity_window,layer_spar,ind_pairs,device):
     clone_grad[inds] = 1
     return clone_grad
 
-def groups(grad_flat, group_len,denominator,all_signal,device):
-    sparseCount = sum(grad_flat!=0)
+def groups(grad_flat, group_len,denominator,device):
+    sparseCount = torch.sum(grad_flat!=0)
     sparseCount= sparseCount.__int__()
     vals, ind = torch.topk(grad_flat.abs(),k=sparseCount, dim=0)
     group_boundries = torch.zeros(group_len + 1).to(device)
     group_boundries[0] = vals[0].float()
     sign_mask = torch.sign(grad_flat[ind])
-    timez =[]
     for i in range(1,group_len):
         group_boundries[i] = group_boundries[i-1] /denominator
     startPoint =0
@@ -234,24 +234,20 @@ def groups(grad_flat, group_len,denominator,all_signal,device):
     startPointz =[]
     for i in range(group_len):
         if vals[startPoint] > group_boundries[i+1]:
-            ts1 = time.time()
             startPointz.append(startPoint)
             for index,val in enumerate(vals[startPoint:vals.numel()]):
                 if val <= group_boundries[i+1] and group_boundries[i+1] !=0:
                     newVals[startPoint:startPoint+index] = torch.mean(vals[startPoint:startPoint+index])
                     startPoint += index
-                    timez.append(time.time() - ts1)
                     break
                 elif group_boundries[i+1]==0:
                     newVals[startPoint:vals.numel()] = torch.mean(vals[startPoint:vals.numel()])
-                    timez.append(time.time() - ts1)
                     break
     newVals *= sign_mask
-    if all_signal: ## apply averaging for all datas in grad.data
-        sums = torch.sum(grad_flat) - torch.sum(grad_flat[ind])
-        avg = sums / (grad_flat.numel() - sparseCount)
-        grad_flat *= 0
-        grad_flat+=avg
-    else:
-        grad_flat *= 0
+    grad_flat *= 0
     grad_flat[ind] = newVals
+
+def collectMojority(grad_flat,topk,majority_pool):
+    inds = torch.topk(grad_flat, k=topk, dim=0)[1]
+    majority_pool[inds] += 1
+    return None

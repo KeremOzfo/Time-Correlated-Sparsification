@@ -11,17 +11,23 @@ def args_parser():
 
     # Federated params
     parser.add_argument('--num_client', type=int, default=10, help='number of clients')
-    parser.add_argument('--bs', type=int, default=32, help='batchsize')
+    parser.add_argument('--bs', type=int, default=64, help='batchsize')
     parser.add_argument('--num_epoch', type=int, default=300, help='number of epochs')
-    parser.add_argument('--lr', type=float, default=0.4, help='learning_rate')
+    parser.add_argument('--lr', type=float, default=0.8, help='learning_rate')
     parser.add_argument('--layer_wise_spars', type=bool, default=True, help='include layer-wise sparsification')
+    parser.add_argument('--worker_LWS', type=bool, default=True, help='include layer-wise sparsification')
+    parser.add_argument('--lws_sparsity', type=int, default=4000, help= 'divide individual layers with this value')
+    parser.add_argument('--lws_sparsity_w', type=int, default=1000, help='divide individual layers in worker with this value')
     parser.add_argument('--sparsity_window', type=int, default=100, help='largest grad entry is chosen within this window')
-    parser.add_argument('--lr_change', type=list, default=[150, 250], help='determines the at which epoch lr will decrease')
+    parser.add_argument('--lr_change', type=list, default=[150, 250], help='determines the at which epochs lr will decrease')
+    parser.add_argument('--errorDecay',type=bool,default=False, help='error correction decays over the time.')
+    parser.add_argument('--errDecayVals',type=list,default=[100,0.9], help='list[0] gives at which epoch errorCorr will multipled with l[1]')
+    parser.add_argument('--warmUp', type=bool, default=True, help='LR warm up.')
+
+
     # Quantization params
-    parser.add_argument('--quantization', type=bool, default=True,help='apply quantization or not')
-    parser.add_argument('--num_groups', type=int, default=16, help='add up the error weights or not')
+    parser.add_argument('--quantization', type=bool, default=False,help='apply quantization or not')
+    parser.add_argument('--num_groups', type=int, default=16, help='Number Of groups')
     parser.add_argument('--denominator', type=float, default=1.2, help='divide groups by this')
-    parser.add_argument('--avg_all', type=bool, default=True, help='apply quantization for all params')
-    parser.add_argument('--all_avg_iter', type=int, default=25, help='at which iter make all avg')
     args = parser.parse_args()
     return args
