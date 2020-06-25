@@ -174,8 +174,8 @@ def sparse_timeC(grad_flat,sparsity_window,exclusive_sparsity_windows,prev_ps_ma
 
 def sparse_timeC_alt(grad_flat,sparsity_window,exclusive_sparsity_windows,layer_spar,prev_ps_mask,ind_pairs,device):
     exclusive_sparse= math.ceil(len(grad_flat)/(sparsity_window*exclusive_sparsity_windows))
-    sparsed_worker_model = (grad_flat * prev_ps_mask).to(device)
-    exclusive_grads = grad_flat.sub(sparsed_worker_model).to(device)
+    exclusive_mask = 1 - prev_ps_mask
+    exclusive_grads = (grad_flat * exclusive_mask).to(device)
     inds = torch.empty(0,dtype=torch.float).to(device)
     worker_mask = torch.zeros_like(grad_flat)
     for layer in ind_pairs:
@@ -187,14 +187,12 @@ def sparse_timeC_alt(grad_flat,sparsity_window,exclusive_sparsity_windows,layer_
         l_ind.add_(startPoint)
         inds = torch.cat((inds.float(), l_ind.float()), 0)
     inds = inds.long()
-    ###
-    if exclusive_sparse > inds.numel(): ##  never-used  at 1000-- more of a failsafe
+    if exclusive_sparse > inds.numel():
         clone_worker_grad = torch.clone(exclusive_grads)
         clone_worker_grad[inds] = 0
         topk = exclusive_sparse - inds.numel()
-        vals_,inds_ = torch.topk(clone_worker_grad.abs(),k=topk,dim=0)
+        inds_ = torch.topk(clone_worker_grad.abs(),k=topk,dim=0)[1]
         inds = torch.cat((inds, inds_), 0)
-    ###
     worker_mask[inds] = 1
     worker_mask += prev_ps_mask
     grad_flat *= worker_mask
@@ -246,8 +244,3 @@ def groups(grad_flat, group_len,denominator,device):
     newVals *= sign_mask
     grad_flat *= 0
     grad_flat[ind] = newVals
-
-def collectMojority(grad_flat,topk,majority_pool):
-    inds = torch.topk(grad_flat, k=topk, dim=0)[1]
-    majority_pool[inds] += 1
-    return None

@@ -10,7 +10,7 @@ device = torch.device("cpu")
 args = args_parser()
 
 if __name__ == '__main__':
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     simulation_ID = int(random.uniform(1,999))
     print('device:',device)
     args = args_parser()
@@ -23,7 +23,7 @@ if __name__ == '__main__':
     if not os.path.exists(os.getcwd() + '/Results'):
         os.mkdir(os.getcwd() + '/Results')
     n_path = os.path.join(os.getcwd(), 'Results', newFile)
-    for i in range(2):
+    for i in range(5):
         accs = train(args, device)
         if i == 0:
             os.mkdir(n_path)
@@ -44,6 +44,6 @@ if __name__ == '__main__':
                 args.lr) + '-LWS-'+str(args.layer_wise_spars) +'-WorkerLWS-'+str(args.worker_LWS) +'ErrorDecay2-'+str(args.errorDecay)+ str(i)
             s_loc = os.path.join(n_path,s_loc)
             np.save(s_loc, accs)
-        f = open(n_path + '/simulation_Details.txt', 'w+')
+        f = open(n_path + '/simulation_Details.txt', 'a+')
         f.write('Trial ' + str(i) + ' results at ' + str(accs[args.num_epoch]) + '\n')
         f.close()

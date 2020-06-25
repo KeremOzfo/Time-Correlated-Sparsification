@@ -40,6 +40,7 @@ def train(args, device):
     optimizers = [torch.optim.SGD(net_users[cl].parameters(), lr=args.lr) for cl in range(num_client)]
     criterions = [nn.CrossEntropyLoss() for u in range(num_client)]
     testloader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False, num_workers=2)
+    schedulers = [torch.optim.lr_scheduler.StepLR(optimizers[cl], step_size=30, gamma=0.1) for cl in range(num_client)]
 
     # synch all clients models models with PS
     [sf.pull_model(net_users[cl], net_ps) for cl in range(num_client)]
@@ -65,7 +66,6 @@ def train(args, device):
     acc = evaluate_accuracy(net_ps, testloader, device)
     accuracys.append(acc * 100)
     for epoch in tqdm(range(args.num_epoch)):
-        majority_pool = torch.zeros(modelsize)
         if epoch == args.errDecayVals[0] and args.errorDecay is True:
             errorCorCof = args.errDecayVals[1]
         if args.warmUp and epoch < 6:
@@ -100,8 +100,8 @@ def train(args, device):
             ps_model_dif = torch.zeros_like(ps_model_flat)
             for cl in range(num_client):
                 model_flat = sf.get_model_flattened(net_users[cl], device)
+                model_flat.add_(errors[cl] * currentLR * errorCorCof)
                 difmodel = (model_flat.sub(ps_model_flat)).to(device)
-                difmodel.add_(errors[cl] * currentLR * errorCorCof)
                 difmodel_clone = torch.clone(difmodel).to(device)
 
                 if not (args.warmUp and epoch < 6):
