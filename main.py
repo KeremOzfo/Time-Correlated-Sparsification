@@ -10,7 +10,7 @@ device = torch.device("cpu")
 args = args_parser()
 
 if __name__ == '__main__':
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     simulation_ID = int(random.uniform(1,999))
     print('device:',device)
     args = args_parser()

@@ -37,7 +37,7 @@ def train(args, device):
 
     net_users = [get_net(args).to(device) for u in range(num_client)]
 
-    optimizers = [torch.optim.SGD(net_users[cl].parameters(), lr=args.lr) for cl in range(num_client)]
+    optimizers = [torch.optim.SGD(net_users[cl].parameters(), lr=args.lr, weight_decay = 1e-4) for cl in range(num_client)]
     criterions = [nn.CrossEntropyLoss() for u in range(num_client)]
     testloader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False, num_workers=2)
     schedulers = [torch.optim.lr_scheduler.StepLR(optimizers[cl], step_size=30, gamma=0.1) for cl in range(num_client)]
@@ -68,18 +68,18 @@ def train(args, device):
     for epoch in tqdm(range(args.num_epoch)):
         if epoch == args.errDecayVals[0] and args.errorDecay is True:
             errorCorCof = args.errDecayVals[1]
-        if args.warmUp and epoch < 6:
+        if args.warmUp and epoch < 5:
             for cl in range(num_client):
                 for param_group in optimizers[cl].param_groups:
                     if epoch ==0:
                         param_group['lr'] = 0.1
                     else:
-                        lr_change = (args.lr - 0.1) / 5
+                        lr_change = (args.lr - 0.1) / 4
                         param_group['lr'] = (lr_change * epoch) + 0.1
         if epoch in args.lr_change:
             for cl in range(num_client):
                 sf.adjust_learning_rate(optimizers[cl], epoch, args.lr_change, args.lr)
-            currentLR = sf.get_LR(epoch, args.lr, args.lr_change)
+        currentLR = sf.get_LR(optimizers[0])
 
         for run in range(runs):
 
@@ -104,7 +104,7 @@ def train(args, device):
                 difmodel = (model_flat.sub(ps_model_flat)).to(device)
                 difmodel_clone = torch.clone(difmodel).to(device)
 
-                if not (args.warmUp and epoch < 6):
+                if not (args.warmUp and epoch < 5):
                     if args.layer_wise_spars and args.worker_LWS:
                         sf.sparse_timeC_alt(difmodel,args.sparsity_window,10,args.lws_sparsity_w,ps_model_mask,ind_pairs,device)
                     else:
@@ -118,7 +118,7 @@ def train(args, device):
             ps_model_flat.add_(ps_model_dif)
             topk = math.ceil(ps_model_dif.nelement() / args.sparsity_window)
             ind = torch.topk(ps_model_dif.abs(), k=topk, dim=0)[1]
-            if not (args.warmUp and epoch < 6):
+            if not (args.warmUp and epoch < 5):
                 if args.layer_wise_spars:
                     ps_model_mask = sf.sparse_special_mask(ps_model_flat, args.sparsity_window, args.lws_sparsity, ind_pairs, device)
                 else:

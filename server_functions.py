@@ -148,11 +148,10 @@ def adjust_learning_rate(optimizer, epoch,lr_change, lr):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def get_LR(epoch, lr,lr_change):
-    if epoch in lr_change:
-        lr_change = np.asarray(lr_change)
-        loc = np.where(lr_change == epoch)[0][0] + 1
-        lr *= (0.1 ** loc)
+def get_LR(optimizer):
+    lr = None
+    for param_group in optimizer.param_groups:
+        lr = param_group['lr']
     return lr
 
 
